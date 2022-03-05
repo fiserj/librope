@@ -345,7 +345,7 @@ static ROPE_RESULT rope_insert_at_iter(rope *r, rope_node *e, rope_iter *iter, c
     assert(offset <= e->nexts[0].skip_size);
     offset_bytes = count_bytes_in_utf8(e->str, offset);
   }
-ssize_t a;
+
   // We might be able to insert the new data into the current node, depending on
   // how big it is. We'll count the bytes, and also check that its valid utf8.
   int32_t num_inserted_bytes = bytelen_and_check_utf8(str);
