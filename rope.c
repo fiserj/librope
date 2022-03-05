@@ -55,7 +55,7 @@ rope *rope_copy(const rope *other) {
 
   rope_node *nodes[ROPE_MAX_HEIGHT];
 
-  for (int i = 0; i < other->head.height; i++) {
+  for (uint32_t i = 0; i < other->head.height; i++) {
     nodes[i] = &r->head;
     // non-NULL next pointers will be rewritten below.
     r->head.nexts[i] = other->head.nexts[i];
@@ -72,7 +72,7 @@ rope *rope_copy(const rope *other) {
     memcpy(n2->str, n->str, n->num_bytes);
     memcpy(n2->nexts, n->nexts, h * sizeof(rope_skip_node));
 
-    for (int i = 0; i < h; i++) {
+    for (uint32_t i = 0; i < h; i++) {
       nodes[i]->nexts[i].node = n2;
       nodes[i] = n2;
     }
@@ -211,7 +211,7 @@ static uint32_t strlen_utf8(const uint8_t *str) {
 
 // Checks if a UTF8 string is ok. Returns the number of bytes in the string if
 // it is ok, otherwise returns -1.
-static int32_t bytelen_and_check_utf8(const uint8_t *str) {
+static int64_t bytelen_and_check_utf8(const uint8_t *str) {
   const uint8_t *p = str;
   while (*p != '\0') {
     uint32_t size = codepoint_size(*p);
@@ -280,7 +280,7 @@ static rope_node *iter_at_char_pos(rope *r, uint32_t char_pos, rope_iter *iter) 
 }
 
 static void update_offset_list(rope *r, rope_iter *iter, uint32_t num_chars) {
-  for (int i = 0; i < r->head.height; i++) {
+  for (uint32_t i = 0; i < r->head.height; i++) {
     iter->s[i].node->nexts[i].skip_size += num_chars;
   }
 }
@@ -348,8 +348,10 @@ static ROPE_RESULT rope_insert_at_iter(rope *r, rope_node *e, rope_iter *iter, c
 
   // We might be able to insert the new data into the current node, depending on
   // how big it is. We'll count the bytes, and also check that its valid utf8.
-  int32_t num_inserted_bytes = bytelen_and_check_utf8(str);
-  if (num_inserted_bytes == -1) return ROPE_INVALID_UTF8;
+  const int64_t num_inserted_bytes_or_error = bytelen_and_check_utf8(str);
+  if (num_inserted_bytes_or_error == -1) return ROPE_INVALID_UTF8;
+
+  const uint32_t num_inserted_bytes = (uint32_t)num_inserted_bytes_or_error;
 
   // Can we insert into the current node?
   bool insert_here = e->num_bytes + num_inserted_bytes <= ROPE_NODE_STR_SIZE;
@@ -365,7 +367,7 @@ static ROPE_RESULT rope_insert_at_iter(rope *r, rope_node *e, rope_iter *iter, c
     // - There's room in the next node
     if (next && next->num_bytes + num_inserted_bytes <= ROPE_NODE_STR_SIZE) {
       offset = offset_bytes = 0;
-      for (int i = 0; i < next->height; i++) {
+      for (uint32_t i = 0; i < next->height; i++) {
         iter->s[i].node = next;
         // tree offset nodes will not be used.
       }
@@ -545,7 +547,7 @@ void _rope_check(rope *r) {
   // The offsets here are used to store the total distance travelled from the start
   // of the rope.
   rope_iter iter = {};
-  for (int i = 0; i < r->head.height; i++) {
+  for (uint32_t i = 0; i < r->head.height; i++) {
     iter.s[i].node = &r->head;
   }
 
@@ -554,7 +556,7 @@ void _rope_check(rope *r) {
     assert(n->height <= ROPE_MAX_HEIGHT);
     assert(count_bytes_in_utf8(n->str, n->nexts[0].skip_size) == n->num_bytes);
 
-    for (int i = 0; i < n->height; i++) {
+    for (uint32_t i = 0; i < n->height; i++) {
       assert(iter.s[i].node == n);
       assert(iter.s[i].skip_size == num_chars);
       iter.s[i].node = n->nexts[i].node;
@@ -565,7 +567,7 @@ void _rope_check(rope *r) {
     num_chars += n->nexts[0].skip_size;
   }
 
-  for (int i = 0; i < r->head.height; i++) {
+  for (uint32_t i = 0; i < r->head.height; i++) {
     assert(iter.s[i].node == NULL);
     assert(iter.s[i].skip_size == num_chars);
   }
@@ -580,7 +582,7 @@ void _rope_print(rope *r) {
   printf("chars: %" PRIu32 "\tbytes: %" PRIu32 "\theight: %" PRIu32 "\n", r->num_chars, r->num_bytes, r->head.height);
 
   printf("HEAD");
-  for (int i = 0; i < r->head.height; i++) {
+  for (uint32_t i = 0; i < r->head.height; i++) {
     printf(" |%3" PRIu32 " ", r->head.nexts[i].skip_size);
   }
   printf("\n");
@@ -588,7 +590,7 @@ void _rope_print(rope *r) {
   int num = 0;
   for (rope_node *n = &r->head; n != NULL; n = n->nexts[0].node) {
     printf("%3d:", num++);
-    for (int i = 0; i < n->height; i++) {
+    for (uint32_t i = 0; i < n->height; i++) {
       printf(" |%3" PRIu32 " ", n->nexts[i].skip_size);
     }
     printf("        : \"");
