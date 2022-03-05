@@ -4,20 +4,17 @@
 #include <string.h>
 #include <sys/types.h>
 
-// Needed for VC++, which always compiles in C++ mode and doesn't have stdbool.
-#ifndef __cplusplus
 #include <stdbool.h>
-#endif
 
 #include <assert.h>
 #include "rope.h"
 
 // The number of bytes the rope head structure takes up
-static const size_t ROPE_SIZE = sizeof(rope) + sizeof(rope_node) * ROPE_MAX_HEIGHT;
+static const uint32_t ROPE_SIZE = sizeof(rope) + sizeof(rope_node) * ROPE_MAX_HEIGHT;
 
 // Create a new rope with no contents
-rope *rope_new2(void *(*alloc)(size_t bytes),
-                void *(*realloc)(void *ptr, size_t newsize),
+rope *rope_new2(void *(*alloc)(uint32_t bytes),
+                void *(*realloc)(void *ptr, uint32_t newsize),
                 void (*free)(void *ptr)) {
   rope *r = (rope *)alloc(ROPE_SIZE);
   r->num_chars = r->num_bytes = 0;
@@ -67,7 +64,7 @@ rope *rope_copy(const rope *other) {
 
   for (rope_node *n = other->head.nexts[0].node; n != NULL; n = n->nexts[0].node) {
     // I wonder if it would be faster if we took this opportunity to rebalance the node list..?
-    size_t h = n->height;
+    uint32_t h = n->height;
     rope_node *n2 = (rope_node *)r->alloc(sizeof(rope_node) + h * sizeof(rope_skip_node));
 
     // Would it be faster to just *n2 = *n; ?
@@ -99,22 +96,22 @@ void rope_free(rope *r) {
 }
 
 // Get the number of characters in a rope
-size_t rope_char_count(const rope *r) {
+uint32_t rope_char_count(const rope *r) {
   assert(r);
   return r->num_chars;
 }
 
 // Get the number of bytes which the rope would take up if stored as a utf8
 // string
-size_t rope_byte_count(const rope *r) {
+uint32_t rope_byte_count(const rope *r) {
   assert(r);
   return r->num_bytes;
 }
 
 // Copies the rope's contents into a utf8 encoded C string. Also copies a trailing '\0' character.
 // Returns the number of bytes written, which is rope_byte_count(r) + 1.
-size_t rope_write_cstr(rope *r, uint8_t *dest) {
-  size_t num_bytes = rope_byte_count(r);
+uint32_t rope_write_cstr(rope *r, uint8_t *dest) {
+  uint32_t num_bytes = rope_byte_count(r);
   dest[num_bytes] = '\0';
 
   if (num_bytes) {
@@ -165,7 +162,7 @@ static uint8_t random_height() {
 }
 
 // Figure out how many bytes to allocate for a node with the specified height.
-static size_t node_size(uint8_t height) {
+static uint32_t node_size(uint8_t height) {
   return sizeof(rope_node) + height * sizeof(rope_skip_node);
 }
 
@@ -181,7 +178,7 @@ static rope_node *alloc_node(rope *r, uint8_t height) {
 // Find out how many bytes the unicode character which starts with the specified byte
 // will occupy in memory.
 // Returns the number of bytes, or SIZE_MAX if the byte is invalid.
-static inline size_t codepoint_size(uint8_t byte) {
+static inline uint32_t codepoint_size(uint8_t byte) {
   if (byte == 0) { return SIZE_MAX; } // NULL byte.
   else if (byte <= 0x7f) { return 1; } // 0x74 = 0111 1111
   else if (byte <= 0xbf) { return SIZE_MAX; } // 1011 1111. Invalid for a starting byte.
@@ -194,7 +191,7 @@ static inline size_t codepoint_size(uint8_t byte) {
 }
 
 // This little function counts how many bytes a certain number of characters take up.
-static size_t count_bytes_in_utf8(const uint8_t *str, size_t num_chars) {
+static uint32_t count_bytes_in_utf8(const uint8_t *str, uint32_t num_chars) {
   const uint8_t *p = str;
   for (unsigned int i = 0; i < num_chars; i++) {
     p += codepoint_size(*p);
@@ -203,9 +200,9 @@ static size_t count_bytes_in_utf8(const uint8_t *str, size_t num_chars) {
 }
 
 // Count the number of characters in a string.
-static size_t strlen_utf8(const uint8_t *str) {
+static uint32_t strlen_utf8(const uint8_t *str) {
   const uint8_t *p = str;
-  size_t i = 0;
+  uint32_t i = 0;
   while (*p) {
     p += codepoint_size(*p);
     i++;
@@ -215,10 +212,10 @@ static size_t strlen_utf8(const uint8_t *str) {
 
 // Checks if a UTF8 string is ok. Returns the number of bytes in the string if
 // it is ok, otherwise returns -1.
-static ssize_t bytelen_and_check_utf8(const uint8_t *str) {
+static suint32_t bytelen_and_check_utf8(const uint8_t *str) {
   const uint8_t *p = str;
   while (*p != '\0') {
-    size_t size = codepoint_size(*p);
+    uint32_t size = codepoint_size(*p);
     if (size == SIZE_MAX) return -1;
     p++; size--;
     while (size > 0) {
@@ -230,7 +227,7 @@ static ssize_t bytelen_and_check_utf8(const uint8_t *str) {
   }
 
 #ifdef DEBUG
-  size_t num = p - str;
+  uint32_t num = p - str;
   assert(num == strlen((char *)str));
 #endif
 
@@ -246,15 +243,15 @@ typedef struct {
 // Internal function for navigating to a particular character offset in the rope.
 // The function returns the list of nodes which point past the position, as well as
 // offsets of how far into their character lists the specified characters are.
-static rope_node *iter_at_char_pos(rope *r, size_t char_pos, rope_iter *iter) {
+static rope_node *iter_at_char_pos(rope *r, uint32_t char_pos, rope_iter *iter) {
   assert(char_pos <= r->num_chars);
 
   rope_node *e = &r->head;
   int height = r->head.height - 1;
 
   // Offset stores how many characters we still need to skip in the current node.
-  size_t offset = char_pos;
-  size_t skip;
+  uint32_t offset = char_pos;
+  uint32_t skip;
 
   while (true) {
     skip = e->nexts[height].skip_size;
@@ -283,7 +280,7 @@ static rope_node *iter_at_char_pos(rope *r, size_t char_pos, rope_iter *iter) {
   return e;
 }
 
-static void update_offset_list(rope *r, rope_iter *iter, size_t num_chars) {
+static void update_offset_list(rope *r, rope_iter *iter, uint32_t num_chars) {
   for (int i = 0; i < r->head.height; i++) {
     iter->s[i].node->nexts[i].skip_size += num_chars;
   }
@@ -293,7 +290,7 @@ static void update_offset_list(rope *r, rope_iter *iter, size_t num_chars) {
 // This function creates a new node in the rope at the specified position and fills it with the
 // passed string.
 static void insert_at(rope *r, rope_iter *iter,
-    const uint8_t *str, size_t num_bytes, size_t num_chars) {
+    const uint8_t *str, uint32_t num_bytes, uint32_t num_chars) {
   // This describes how many levels of the iter are filled in.
   uint8_t max_height = r->head.height;
   uint8_t new_height = random_height();
@@ -342,9 +339,9 @@ static void insert_at(rope *r, rope_iter *iter,
 static ROPE_RESULT rope_insert_at_iter(rope *r, rope_node *e, rope_iter *iter, const uint8_t *str) {
   // iter.offset contains how far (in characters) into the current element to skip.
   // Figure out how much that is in bytes.
-  size_t offset_bytes = 0;
+  uint32_t offset_bytes = 0;
   // The insertion offset into the destination node.
-  size_t offset = iter->s[0].skip_size;
+  uint32_t offset = iter->s[0].skip_size;
   if (offset) {
     assert(offset <= e->nexts[0].skip_size);
     offset_bytes = count_bytes_in_utf8(e->str, offset);
@@ -352,7 +349,7 @@ static ROPE_RESULT rope_insert_at_iter(rope *r, rope_node *e, rope_iter *iter, c
 
   // We might be able to insert the new data into the current node, depending on
   // how big it is. We'll count the bytes, and also check that its valid utf8.
-  ssize_t num_inserted_bytes = bytelen_and_check_utf8(str);
+  suint32_t num_inserted_bytes = bytelen_and_check_utf8(str);
   if (num_inserted_bytes == -1) return ROPE_INVALID_UTF8;
 
   // Can we insert into the current node?
@@ -392,7 +389,7 @@ static ROPE_RESULT rope_insert_at_iter(rope *r, rope_node *e, rope_iter *iter, c
     e->num_bytes += num_inserted_bytes;
 
     r->num_bytes += num_inserted_bytes;
-    size_t num_inserted_chars = strlen_utf8(str);
+    uint32_t num_inserted_chars = strlen_utf8(str);
     r->num_chars += num_inserted_chars;
 
     // .... aaaand update all the offset amounts.
@@ -403,7 +400,7 @@ static ROPE_RESULT rope_insert_at_iter(rope *r, rope_node *e, rope_iter *iter, c
 
     // If we're not at the end of the current node, we'll need to remove
     // the end of the current node's data and reinsert it later.
-    size_t num_end_chars, num_end_bytes = e->num_bytes - offset_bytes;
+    uint32_t num_end_chars, num_end_bytes = e->num_bytes - offset_bytes;
     if (num_end_bytes) {
       // We'll pretend like the character have been deleted from the node, while leaving
       // the bytes themselves there (for later).
@@ -419,13 +416,13 @@ static ROPE_RESULT rope_insert_at_iter(rope *r, rope_node *e, rope_iter *iter, c
     // Now we insert new nodes containing the new character data. The data must be broken into
     // pieces of with a maximum size of ROPE_NODE_STR_SIZE. Node boundaries must not occur in the
     // middle of a utf8 codepoint.
-    size_t str_offset = 0;
+    uint32_t str_offset = 0;
     while (str_offset < num_inserted_bytes) {
-      size_t new_node_bytes = 0;
-      size_t new_node_chars = 0;
+      uint32_t new_node_bytes = 0;
+      uint32_t new_node_chars = 0;
 
       while (str_offset + new_node_bytes < num_inserted_bytes) {
-        size_t cs = codepoint_size(str[str_offset + new_node_bytes]);
+        uint32_t cs = codepoint_size(str[str_offset + new_node_bytes]);
         if (cs + new_node_bytes > ROPE_NODE_STR_SIZE) {
           break;
         } else {
@@ -446,7 +443,7 @@ static ROPE_RESULT rope_insert_at_iter(rope *r, rope_node *e, rope_iter *iter, c
   return ROPE_OK;
 }
 
-ROPE_RESULT rope_insert(rope *r, size_t pos, const uint8_t *str) {
+ROPE_RESULT rope_insert(rope *r, uint32_t pos, const uint8_t *str) {
   assert(r);
   assert(str);
 #ifdef DEBUG
@@ -469,9 +466,9 @@ ROPE_RESULT rope_insert(rope *r, size_t pos, const uint8_t *str) {
 
 // Delete num characters at position pos. Deleting past the end of the string
 // has no effect.
-static void rope_del_at_iter(rope *r, rope_node *e, rope_iter *iter, size_t length) {
+static void rope_del_at_iter(rope *r, rope_node *e, rope_iter *iter, uint32_t length) {
   r->num_chars -= length;
-  size_t offset = iter->s[0].skip_size;
+  uint32_t offset = iter->s[0].skip_size;
   while (length) {
     if (offset == e->nexts[0].skip_size) {
       // End of the current node. Skip to the start of the next one.
@@ -479,15 +476,15 @@ static void rope_del_at_iter(rope *r, rope_node *e, rope_iter *iter, size_t leng
       offset = 0;
     }
 
-    size_t num_chars = e->nexts[0].skip_size;
-    size_t removed = MIN(length, num_chars - offset);
+    uint32_t num_chars = e->nexts[0].skip_size;
+    uint32_t removed = MIN(length, num_chars - offset);
 
     int i;
     if (removed < num_chars || e == &r->head) {
       // Just trim this node down to size.
-      size_t leading_bytes = count_bytes_in_utf8(e->str, offset);
-      size_t removed_bytes = count_bytes_in_utf8(&e->str[leading_bytes], removed);
-      size_t trailing_bytes = e->num_bytes - leading_bytes - removed_bytes;
+      uint32_t leading_bytes = count_bytes_in_utf8(e->str, offset);
+      uint32_t removed_bytes = count_bytes_in_utf8(&e->str[leading_bytes], removed);
+      uint32_t trailing_bytes = e->num_bytes - leading_bytes - removed_bytes;
 
       if (trailing_bytes) {
         memmove(&e->str[leading_bytes], &e->str[leading_bytes + removed_bytes], trailing_bytes);
@@ -520,7 +517,7 @@ static void rope_del_at_iter(rope *r, rope_node *e, rope_iter *iter, size_t leng
   }
 }
 
-void rope_del(rope *r, size_t pos, size_t length) {
+void rope_del(rope *r, uint32_t pos, uint32_t length) {
 #ifdef DEBUG
   _rope_check(r);
 #endif
@@ -549,8 +546,8 @@ void _rope_check(rope *r) {
   assert(skip_over.skip_size == r->num_chars);
   assert(skip_over.node == NULL);
 
-  size_t num_bytes = 0;
-  size_t num_chars = 0;
+  uint32_t num_bytes = 0;
+  uint32_t num_chars = 0;
 
   // The offsets here are used to store the total distance travelled from the start
   // of the rope.

@@ -41,7 +41,7 @@ struct rope_node_t;
 typedef struct {
   // The number of _characters_ between the start of the current node
   // and the start of next.
-  size_t skip_size;
+  uint32_t skip_size;
 
   // For some reason, librope runs about 1% faster when this next pointer is
   // exactly _here_ in the struct.
@@ -63,13 +63,13 @@ typedef struct rope_node_t {
 
 typedef struct {
   // The total number of characters in the rope.
-  size_t num_chars;
+  uint32_t num_chars;
 
   // The total number of bytes which the characters in the rope take up.
-  size_t num_bytes;
+  uint32_t num_bytes;
 
-  void *(*alloc)(size_t bytes);
-  void *(*realloc)(void *ptr, size_t newsize);
+  void *(*alloc)(uint32_t bytes);
+  void *(*realloc)(void *ptr, uint32_t newsize);
   void (*free)(void *ptr);
 
   // The first node exists inline in the rope structure itself.
@@ -84,8 +84,8 @@ extern "C" {
 rope *rope_new();
 
 // Create a new rope using custom allocators.
-rope *rope_new2(void *(*alloc)(size_t bytes),
-    void *(*realloc)(void *ptr, size_t newsize),
+rope *rope_new2(void *(*alloc)(uint32_t bytes),
+    void *(*realloc)(void *ptr, uint32_t newsize),
     void (*free)(void *ptr));
 
 // Create a new rope containing a copy of the given string. Shorthand for
@@ -99,16 +99,16 @@ rope *rope_copy(const rope *r);
 void rope_free(rope *r);
 
 // Get the number of characters in a rope
-size_t rope_char_count(const rope *r);
+uint32_t rope_char_count(const rope *r);
 
 // Get the number of bytes which the rope would take up if stored as a utf8
 // string
-size_t rope_byte_count(const rope *r);
+uint32_t rope_byte_count(const rope *r);
 
 // Copies the rope's contents into a utf8 encoded C string. Also copies a
 // trailing '\0' character.
 // Returns the number of bytes written, which is rope_byte_count(r) + 1.
-size_t rope_write_cstr(rope *r, uint8_t *dest);
+uint32_t rope_write_cstr(rope *r, uint8_t *dest);
 
 // Create a new C string which contains the rope. The string will contain
 // the rope encoded as utf8, followed by a trailing '\0'.
@@ -120,11 +120,11 @@ uint8_t *rope_create_cstr(rope *r);
 typedef enum { ROPE_OK, ROPE_INVALID_UTF8 } ROPE_RESULT;
 
 // Insert the given utf8 string into the rope at the specified position.
-ROPE_RESULT rope_insert(rope *r, size_t pos, const uint8_t *str);
+ROPE_RESULT rope_insert(rope *r, uint32_t pos, const uint8_t *str);
 
 // Delete num characters at position pos. Deleting past the end of the string
 // has no effect.
-void rope_del(rope *r, size_t pos, size_t num);
+void rope_del(rope *r, uint32_t pos, uint32_t num);
 
 // This macro expands to a for() loop header which loops over the segments in a
 // rope.
@@ -144,12 +144,12 @@ static inline uint8_t *rope_node_data(rope_node *n) {
 
 // Get the number of bytes inside a rope node. This is useful when you're
 // looping through a rope.
-static inline size_t rope_node_num_bytes(rope_node *n) {
+static inline uint32_t rope_node_num_bytes(rope_node *n) {
   return n->num_bytes;
 }
 
 // Get the number of characters inside a rope node.
-static inline size_t rope_node_chars(rope_node *n) {
+static inline uint32_t rope_node_chars(rope_node *n) {
   return n->nexts[0].skip_size;
 }
 
