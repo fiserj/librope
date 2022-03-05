@@ -1,20 +1,19 @@
 // Implementation for rope library.
 
+#include <assert.h>
+#include <inttypes.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
 
-#include <stdbool.h>
-
-#include <assert.h>
 #include "rope.h"
 
 // The number of bytes the rope head structure takes up
 static const uint32_t ROPE_SIZE = sizeof(rope) + sizeof(rope_node) * ROPE_MAX_HEIGHT;
 
 // Create a new rope with no contents
-rope *rope_new2(void *(*alloc)(uint32_t bytes),
-                void *(*realloc)(void *ptr, uint32_t newsize),
+rope *rope_new2(void *(*alloc)(size_t bytes),
+                void *(*realloc)(void *ptr, size_t newsize),
                 void (*free)(void *ptr)) {
   rope *r = (rope *)alloc(ROPE_SIZE);
   r->num_chars = r->num_bytes = 0;
@@ -177,17 +176,17 @@ static rope_node *alloc_node(rope *r, uint8_t height) {
 
 // Find out how many bytes the unicode character which starts with the specified byte
 // will occupy in memory.
-// Returns the number of bytes, or SIZE_MAX if the byte is invalid.
+// Returns the number of bytes, or UINT32_MAX if the byte is invalid.
 static inline uint32_t codepoint_size(uint8_t byte) {
-  if (byte == 0) { return SIZE_MAX; } // NULL byte.
+  if (byte == 0) { return UINT32_MAX; } // NULL byte.
   else if (byte <= 0x7f) { return 1; } // 0x74 = 0111 1111
-  else if (byte <= 0xbf) { return SIZE_MAX; } // 1011 1111. Invalid for a starting byte.
+  else if (byte <= 0xbf) { return UINT32_MAX; } // 1011 1111. Invalid for a starting byte.
   else if (byte <= 0xdf) { return 2; } // 1101 1111
   else if (byte <= 0xef) { return 3; } // 1110 1111
   else if (byte <= 0xf7) { return 4; } // 1111 0111
   else if (byte <= 0xfb) { return 5; } // 1111 1011
   else if (byte <= 0xfd) { return 6; } // 1111 1101
-  else { return SIZE_MAX; }
+  else { return UINT32_MAX; }
 }
 
 // This little function counts how many bytes a certain number of characters take up.
@@ -212,11 +211,11 @@ static uint32_t strlen_utf8(const uint8_t *str) {
 
 // Checks if a UTF8 string is ok. Returns the number of bytes in the string if
 // it is ok, otherwise returns -1.
-static suint32_t bytelen_and_check_utf8(const uint8_t *str) {
+static int32_t bytelen_and_check_utf8(const uint8_t *str) {
   const uint8_t *p = str;
   while (*p != '\0') {
     uint32_t size = codepoint_size(*p);
-    if (size == SIZE_MAX) return -1;
+    if (size == UINT32_MAX) return -1;
     p++; size--;
     while (size > 0) {
       // Check that any middle bytes are of the form 0x10xx xxxx
@@ -346,10 +345,10 @@ static ROPE_RESULT rope_insert_at_iter(rope *r, rope_node *e, rope_iter *iter, c
     assert(offset <= e->nexts[0].skip_size);
     offset_bytes = count_bytes_in_utf8(e->str, offset);
   }
-
+ssize_t a;
   // We might be able to insert the new data into the current node, depending on
   // how big it is. We'll count the bytes, and also check that its valid utf8.
-  suint32_t num_inserted_bytes = bytelen_and_check_utf8(str);
+  int32_t num_inserted_bytes = bytelen_and_check_utf8(str);
   if (num_inserted_bytes == -1) return ROPE_INVALID_UTF8;
 
   // Can we insert into the current node?
@@ -578,11 +577,11 @@ void _rope_check(rope *r) {
 // For debugging.
 #include <stdio.h>
 void _rope_print(rope *r) {
-  printf("chars: %zd\tbytes: %zd\theight: %d\n", r->num_chars, r->num_bytes, r->head.height);
+  printf("chars: %" PRIu32 "\tbytes: %" PRIu32 "\theight: %" PRIu32 "\n", r->num_chars, r->num_bytes, r->head.height);
 
   printf("HEAD");
   for (int i = 0; i < r->head.height; i++) {
-    printf(" |%3zd ", r->head.nexts[i].skip_size);
+    printf(" |%3" PRIu32 " ", r->head.nexts[i].skip_size);
   }
   printf("\n");
 
@@ -590,7 +589,7 @@ void _rope_print(rope *r) {
   for (rope_node *n = &r->head; n != NULL; n = n->nexts[0].node) {
     printf("%3d:", num++);
     for (int i = 0; i < n->height; i++) {
-      printf(" |%3zd ", n->nexts[i].skip_size);
+      printf(" |%3" PRIu32 " ", n->nexts[i].skip_size);
     }
     printf("        : \"");
     fwrite(n->str, n->num_bytes, 1, stdout);

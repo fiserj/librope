@@ -68,8 +68,8 @@ typedef struct {
   // The total number of bytes which the characters in the rope take up.
   uint32_t num_bytes;
 
-  void *(*alloc)(uint32_t bytes);
-  void *(*realloc)(void *ptr, uint32_t newsize);
+  void *(*alloc)(size_t bytes);
+  void *(*realloc)(void *ptr, size_t newsize);
   void (*free)(void *ptr);
 
   // The first node exists inline in the rope structure itself.
@@ -84,8 +84,8 @@ extern "C" {
 rope *rope_new();
 
 // Create a new rope using custom allocators.
-rope *rope_new2(void *(*alloc)(uint32_t bytes),
-    void *(*realloc)(void *ptr, uint32_t newsize),
+rope *rope_new2(void *(*alloc)(size_t bytes),
+    void *(*realloc)(void *ptr, size_t newsize),
     void (*free)(void *ptr));
 
 // Create a new rope containing a copy of the given string. Shorthand for
