@@ -30,9 +30,7 @@ rope *rope_new2(void *(*alloc)(size_t bytes),
   r->head.num_bytes = 0;
   r->head.nexts[0].node = NULL;
   r->head.nexts[0].skip_size = 0;
-#if ROPE_WCHAR
-  r->head.nexts[0].wchar_size = 0;
-#endif
+
   return r;
 }
 
@@ -139,13 +137,6 @@ uint8_t *rope_create_cstr(rope *r) {
   return bytes;
 }
 
-#if ROPE_WCHAR
-size_t rope_wchar_count(rope *r) {
-  assert(r);
-  return r->head.nexts[r->head.height - 1].wchar_size;
-}
-#endif
-
 #define MIN(x,y) ((x) > (y) ? (y) : (x))
 #define MAX(x,y) ((x) > (y) ? (x) : (y))
 
@@ -211,32 +202,6 @@ static size_t count_bytes_in_utf8(const uint8_t *str, size_t num_chars) {
   return p - str;
 }
 
-#if ROPE_WCHAR
-
-#define NEEDS_TWO_WCHARS(x) (((x) & 0xf0) == 0xf0)
-
-static size_t count_wchars_in_utf8(const uint8_t *str, size_t num_chars) {
-  size_t wchars = 0;
-  for (unsigned int i = 0; i < num_chars; i++) {
-    wchars += 1 + NEEDS_TWO_WCHARS(*str);
-    str += codepoint_size(*str);
-  }
-  return wchars;
-}
-
-static size_t count_utf8_in_wchars(const uint8_t *str, size_t num_wchars) {
-  size_t chars = num_wchars;
-  for (unsigned int i = 0; i < num_wchars; i++) {
-    if (NEEDS_TWO_WCHARS(*str)) {
-      chars--;
-      i++;
-    }
-    str += codepoint_size(*str);
-  }
-  return chars;
-}
-#endif
-
 // Count the number of characters in a string.
 static size_t strlen_utf8(const uint8_t *str) {
   const uint8_t *p = str;
@@ -290,9 +255,6 @@ static rope_node *iter_at_char_pos(rope *r, size_t char_pos, rope_iter *iter) {
   // Offset stores how many characters we still need to skip in the current node.
   size_t offset = char_pos;
   size_t skip;
-#if ROPE_WCHAR
-  size_t wchar_pos = 0; // Current wchar pos from the start of the rope.
-#endif
 
   while (true) {
     skip = e->nexts[height].skip_size;
@@ -301,17 +263,12 @@ static rope_node *iter_at_char_pos(rope *r, size_t char_pos, rope_iter *iter) {
       assert(e == &r->head || e->num_bytes);
 
       offset -= skip;
-#if ROPE_WCHAR
-      wchar_pos += e->nexts[height].wchar_size;
-#endif
+
       e = e->nexts[height].node;
     } else {
       // Go down.
       iter->s[height].skip_size = offset;
       iter->s[height].node = e;
-#if ROPE_WCHAR
-      iter->s[height].wchar_size = wchar_pos;
-#endif
 
       if (height == 0) {
         break;
@@ -320,92 +277,23 @@ static rope_node *iter_at_char_pos(rope *r, size_t char_pos, rope_iter *iter) {
       }
     }
   }
-
-#if ROPE_WCHAR
-  // For some reason, this is _REALLY SLOW_. Like, 5.5Mops/s -> 4Mops/s from this block of code.
-  wchar_pos += count_wchars_in_utf8(e->str, offset);
-
-  // The iterator has the wchar pos from the start of the whole string.
-  for (int i = 0; i < r->head.height; i++) {
-    iter->s[i].wchar_size = wchar_pos - iter->s[i].wchar_size;
-  }
-#endif
 
   assert(offset <= ROPE_NODE_STR_SIZE);
   assert(iter->s[0].node == e);
   return e;
 }
 
-#if ROPE_WCHAR
-// Equivalent of iter_at_char_pos, but for wchar positions instead.
-static rope_node *iter_at_wchar_pos(rope *r, size_t wchar_pos, rope_iter *iter) {
-  int height = r->head.height - 1;
-  assert(wchar_pos <= r->head.nexts[height].wchar_size);
-
-  rope_node *e = &r->head;
-
-  // Offset stores how many wchar characters we still need to skip in the current node.
-  size_t offset = wchar_pos;
-  size_t skip;
-  size_t char_pos = 0; // Current char pos from the start of the rope.
-
-  while (true) {
-    skip = e->nexts[height].wchar_size;
-    if (offset > skip) {
-      // Go right.
-      offset -= skip;
-      char_pos += e->nexts[height].skip_size;
-      e = e->nexts[height].node;
-    } else {
-      // Go down.
-      iter->s[height].skip_size = char_pos;
-      iter->s[height].node = e;
-      iter->s[height].wchar_size = offset;
-
-      if (height == 0) {
-        break;
-      } else {
-        height--;
-      }
-    }
-  }
-
-  char_pos += count_utf8_in_wchars(e->str, offset);
-
-  // The iterator has character positions from the start of the rope to the start of the node.
-  for (int i = 0; i < r->head.height; i++) {
-    iter->s[i].skip_size = char_pos - iter->s[i].skip_size;
-  }
-  assert(e == iter->s[0].node);
-  return e;
-}
-#endif
-
-#if ROPE_WCHAR
-static void update_offset_list(rope *r, rope_iter *iter, size_t num_chars, size_t num_wchars) {
-  for (int i = 0; i < r->head.height; i++) {
-    iter->s[i].node->nexts[i].skip_size += num_chars;
-    iter->s[i].node->nexts[i].wchar_size += num_wchars;
-  }
-}
-#else
 static void update_offset_list(rope *r, rope_iter *iter, size_t num_chars) {
   for (int i = 0; i < r->head.height; i++) {
     iter->s[i].node->nexts[i].skip_size += num_chars;
   }
 }
-#endif
-
 
 // Internal method of rope_insert.
 // This function creates a new node in the rope at the specified position and fills it with the
 // passed string.
 static void insert_at(rope *r, rope_iter *iter,
     const uint8_t *str, size_t num_bytes, size_t num_chars) {
-#if ROPE_WCHAR
-  size_t num_wchars = count_wchars_in_utf8(str, num_chars);
-#endif
-
   // This describes how many levels of the iter are filled in.
   uint8_t max_height = r->head.height;
   uint8_t new_height = random_height();
@@ -439,20 +327,11 @@ static void insert_at(rope *r, rope_iter *iter,
     // & move the iterator to the end of the newly inserted node.
     iter->s[i].node = new_node;
     iter->s[i].skip_size = num_chars;
-#if ROPE_WCHAR
-    new_node->nexts[i].wchar_size = num_wchars + prev_skip->wchar_size - iter->s[i].wchar_size;
-    prev_skip->wchar_size = iter->s[i].wchar_size;
-    iter->s[i].wchar_size = num_wchars;
-#endif
   }
 
   for (; i < max_height; i++) {
     iter->s[i].node->nexts[i].skip_size += num_chars;
     iter->s[i].skip_size += num_chars;
-#if ROPE_WCHAR
-    iter->s[i].node->nexts[i].wchar_size += num_wchars;
-    iter->s[i].wchar_size += num_wchars;
-#endif
   }
 
   r->num_chars += num_chars;
@@ -517,12 +396,7 @@ static ROPE_RESULT rope_insert_at_iter(rope *r, rope_node *e, rope_iter *iter, c
     r->num_chars += num_inserted_chars;
 
     // .... aaaand update all the offset amounts.
-#if ROPE_WCHAR
-    size_t num_inserted_wchars = count_wchars_in_utf8(str, num_inserted_chars);
-    update_offset_list(r, iter, num_inserted_chars, num_inserted_wchars);
-#else
     update_offset_list(r, iter, num_inserted_chars);
-#endif
 
   } else {
     // There isn't room. We'll need to add at least one new node to the rope.
@@ -535,12 +409,8 @@ static ROPE_RESULT rope_insert_at_iter(rope *r, rope_node *e, rope_iter *iter, c
       // the bytes themselves there (for later).
       e->num_bytes = offset_bytes;
       num_end_chars = e->nexts[0].skip_size - offset;
-#if ROPE_WCHAR
-      size_t num_end_wchars = count_wchars_in_utf8(&e->str[offset_bytes], num_end_chars);
-      update_offset_list(r, iter, -num_end_chars, -num_end_wchars);
-#else
+
       update_offset_list(r, iter, -num_end_chars);
-#endif
 
       r->num_chars -= num_end_chars;
       r->num_bytes -= num_end_bytes;
@@ -597,30 +467,6 @@ ROPE_RESULT rope_insert(rope *r, size_t pos, const uint8_t *str) {
   return result;
 }
 
-#if ROPE_WCHAR
-// Insert the given utf8 string into the rope at the specified position.
-size_t rope_insert_at_wchar(rope *r, size_t wchar_pos, const uint8_t *str) {
-  assert(r);
-  assert(str);
-#ifdef DEBUG
-  _rope_check(r);
-#endif
-  wchar_pos = MIN(wchar_pos, rope_wchar_count(r));
-
-  rope_iter iter;
-  // First we need to search for the node where we'll insert the string.
-  rope_node *e = iter_at_wchar_pos(r, wchar_pos, &iter);
-  size_t pos = iter.s[r->head.height - 1].skip_size;
-  rope_insert_at_iter(r, e, &iter, str);
-
-#ifdef DEBUG
-  _rope_check(r);
-#endif
-  return pos;
-}
-
-#endif
-
 // Delete num characters at position pos. Deleting past the end of the string
 // has no effect.
 static void rope_del_at_iter(rope *r, rope_node *e, rope_iter *iter, size_t length) {
@@ -635,9 +481,6 @@ static void rope_del_at_iter(rope *r, rope_node *e, rope_iter *iter, size_t leng
 
     size_t num_chars = e->nexts[0].skip_size;
     size_t removed = MIN(length, num_chars - offset);
-#if ROPE_WCHAR
-    size_t removed_wchars;
-#endif
 
     int i;
     if (removed < num_chars || e == &r->head) {
@@ -645,9 +488,7 @@ static void rope_del_at_iter(rope *r, rope_node *e, rope_iter *iter, size_t leng
       size_t leading_bytes = count_bytes_in_utf8(e->str, offset);
       size_t removed_bytes = count_bytes_in_utf8(&e->str[leading_bytes], removed);
       size_t trailing_bytes = e->num_bytes - leading_bytes - removed_bytes;
-#if ROPE_WCHAR
-      removed_wchars = count_wchars_in_utf8(&e->str[leading_bytes], removed);
-#endif
+
       if (trailing_bytes) {
         memmove(&e->str[leading_bytes], &e->str[leading_bytes + removed_bytes], trailing_bytes);
       }
@@ -656,21 +497,12 @@ static void rope_del_at_iter(rope *r, rope_node *e, rope_iter *iter, size_t leng
 
       for (i = 0; i < e->height; i++) {
         e->nexts[i].skip_size -= removed;
-#if ROPE_WCHAR
-        e->nexts[i].wchar_size -= removed_wchars;
-#endif
       }
     } else {
       // Remove the node from the list
-#if ROPE_WCHAR
-      removed_wchars = e->nexts[0].wchar_size;
-#endif
       for (i = 0; i < e->height; i++) {
         iter->s[i].node->nexts[i].node = e->nexts[i].node;
         iter->s[i].node->nexts[i].skip_size += e->nexts[i].skip_size - removed;
-#if ROPE_WCHAR
-        iter->s[i].node->nexts[i].wchar_size += e->nexts[i].wchar_size - removed_wchars;
-#endif
       }
 
       r->num_bytes -= e->num_bytes;
@@ -682,9 +514,6 @@ static void rope_del_at_iter(rope *r, rope_node *e, rope_iter *iter, size_t leng
 
     for (; i < r->head.height; i++) {
       iter->s[i].node->nexts[i].skip_size -= removed;
-#if ROPE_WCHAR
-      iter->s[i].node->nexts[i].wchar_size -= removed_wchars;
-#endif
     }
 
     length -= removed;
@@ -712,40 +541,6 @@ void rope_del(rope *r, size_t pos, size_t length) {
 #endif
 }
 
-#if ROPE_WCHAR
-size_t rope_del_at_wchar(rope *r, size_t wchar_pos, size_t wchar_num, size_t *char_len_out) {
-#ifdef DEBUG
-  _rope_check(r);
-#endif
-
-  assert(r);
-  size_t wchar_total = rope_wchar_count(r);
-  wchar_pos = MIN(wchar_pos, wchar_total);
-  wchar_num = MIN(wchar_num, wchar_total - wchar_pos);
-
-  rope_iter iter;
-
-  // Search for the node where we'll insert the string.
-  rope_node *start = iter_at_wchar_pos(r, wchar_pos, &iter);
-  size_t char_pos = iter.s[r->head.height - 1].skip_size;
-
-  rope_iter end_iter;
-  int h = r->head.height - 1;
-  iter_at_wchar_pos(r, iter.s[h].wchar_size + wchar_num, &end_iter);
-
-  size_t char_length = end_iter.s[h].skip_size - iter.s[h].skip_size;
-  rope_del_at_iter(r, start, &iter, char_length);
-
-#ifdef DEBUG
-  _rope_check(r);
-#endif
-  if (char_len_out) {
-    *char_len_out = char_length;
-  }
-  return char_pos;
-}
-#endif
-
 void _rope_check(rope *r) {
   assert(r->head.height); // Even empty ropes have a height of 1.
   assert(r->num_bytes >= r->num_chars);
@@ -756,9 +551,6 @@ void _rope_check(rope *r) {
 
   size_t num_bytes = 0;
   size_t num_chars = 0;
-#if ROPE_WCHAR
-  size_t num_wchar = 0;
-#endif
 
   // The offsets here are used to store the total distance travelled from the start
   // of the rope.
@@ -771,40 +563,25 @@ void _rope_check(rope *r) {
     assert(n == &r->head || n->num_bytes);
     assert(n->height <= ROPE_MAX_HEIGHT);
     assert(count_bytes_in_utf8(n->str, n->nexts[0].skip_size) == n->num_bytes);
-#if ROPE_WCHAR
-    assert(count_wchars_in_utf8(n->str, n->nexts[0].skip_size) == n->nexts[0].wchar_size);
-#endif
+
     for (int i = 0; i < n->height; i++) {
       assert(iter.s[i].node == n);
       assert(iter.s[i].skip_size == num_chars);
       iter.s[i].node = n->nexts[i].node;
       iter.s[i].skip_size += n->nexts[i].skip_size;
-#if ROPE_WCHAR
-      assert(iter.s[i].wchar_size == num_wchar);
-      iter.s[i].wchar_size += n->nexts[i].wchar_size;
-#endif
     }
 
     num_bytes += n->num_bytes;
     num_chars += n->nexts[0].skip_size;
-#if ROPE_WCHAR
-    num_wchar += n->nexts[0].wchar_size;
-#endif
   }
 
   for (int i = 0; i < r->head.height; i++) {
     assert(iter.s[i].node == NULL);
     assert(iter.s[i].skip_size == num_chars);
-#if ROPE_WCHAR
-    assert(iter.s[i].wchar_size == num_wchar);
-#endif
   }
 
   assert(r->num_bytes == num_bytes);
   assert(r->num_chars == num_chars);
-#if ROPE_WCHAR
-  assert(skip_over.wchar_size == num_wchar);
-#endif
 }
 
 // For debugging.

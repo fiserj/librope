@@ -2,7 +2,7 @@
  *
  * This library implements a heavyweight utf8 string type with fast
  * insert-at-position and delete-at-position operations.
- * 
+ *
  * It uses skip lists instead of trees. Trees might be faster - who knows?
  *
  * Ropes are not syncronized. Do not access the same rope from multiple threads
@@ -15,27 +15,13 @@
 #include <stdint.h>
 #include <stddef.h>
 
-// Whether or not the rope should support converting UTF-8 character offsets to
-// wchar array positions. This is useful when interoperating with strings in
-// JS, Objective-C and many other languages. See
-// http://josephg.com/post/31707645955/string-length-lies
-//
-// Adding wchar conversion support decreases performance by about 30%.
-#ifndef ROPE_WCHAR
-#define ROPE_WCHAR 0
-#endif
-
 // These two magic values seem to be approximately optimal given the benchmark
 // in tests.c which does lots of small inserts.
 
 // Must be <= UINT16_MAX. Benchmarking says this is pretty close to optimal
 // (tested on a mac using clang 4.0 and x86_64).
 #ifndef ROPE_NODE_STR_SIZE
-#if ROPE_WCHAR
-#define ROPE_NODE_STR_SIZE 64
-#else
 #define ROPE_NODE_STR_SIZE 136
-#endif
 #endif
 
 // The likelyhood (%) a node will have height (n+1) instead of n
@@ -60,11 +46,6 @@ typedef struct {
   // For some reason, librope runs about 1% faster when this next pointer is
   // exactly _here_ in the struct.
   struct rope_node_t *node;
-
-#if ROPE_WCHAR
-  // The number of wide characters contained in space.
-  size_t wchar_size;
-#endif
 } rope_skip_node;
 
 typedef struct rope_node_t {
@@ -72,21 +53,21 @@ typedef struct rope_node_t {
 
   // The number of bytes in str in use
   uint16_t num_bytes;
-  
+
   // This is the number of elements allocated in nexts.
   // Each height is 1/2 as likely as the height before. The minimum height is 1.
   uint8_t height;
-  
+
   rope_skip_node nexts[];
 } rope_node;
 
 typedef struct {
   // The total number of characters in the rope.
   size_t num_chars;
-  
+
   // The total number of bytes which the characters in the rope take up.
   size_t num_bytes;
-  
+
   void *(*alloc)(size_t bytes);
   void *(*realloc)(void *ptr, size_t newsize);
   void (*free)(void *ptr);
@@ -98,7 +79,7 @@ typedef struct {
 #ifdef __cplusplus
 extern "C" {
 #endif
-  
+
 // Create a new rope with no contents
 rope *rope_new();
 
@@ -137,14 +118,14 @@ uint8_t *rope_create_cstr(rope *r);
 // If you try to insert data into the rope with an invalid UTF8 encoding,
 // nothing will happen and we'll return ROPE_INVALID_UTF8.
 typedef enum { ROPE_OK, ROPE_INVALID_UTF8 } ROPE_RESULT;
-  
+
 // Insert the given utf8 string into the rope at the specified position.
 ROPE_RESULT rope_insert(rope *r, size_t pos, const uint8_t *str);
 
 // Delete num characters at position pos. Deleting past the end of the string
 // has no effect.
 void rope_del(rope *r, size_t pos, size_t num);
-  
+
 // This macro expands to a for() loop header which loops over the segments in a
 // rope.
 //
@@ -171,34 +152,7 @@ static inline size_t rope_node_num_bytes(rope_node *n) {
 static inline size_t rope_node_chars(rope_node *n) {
   return n->nexts[0].skip_size;
 }
-  
-#if ROPE_WCHAR
-// Get the number of wchar characters in the rope
-size_t rope_wchar_count(rope *r);
 
-// Insert the given utf8 string into the rope at the specified wchar position.
-// This is compatible with NSString, Javascript, etc. The string still needs to
-// be passed in using UTF-8.
-//
-// Returns the insertion position in characters.
-size_t rope_insert_at_wchar(rope *r, size_t wchar_pos, const uint8_t *utf8_str);
-  
-// Delete wchar_num wide characters at the specified wchar position offset.
-// If the range is inside character boundaries, behaviour is undefined.
-//
-// Returns the deletion position in characters. *char_len_out is set to the
-// deletion length, in chars if its not null.
-size_t rope_del_at_wchar(rope *r, size_t wchar_pos, size_t wchar_num, size_t *char_len_out);
-  
-// Get the number of wchars inside a rope node. This is useful when you're
-// looping throuhg a rope.
-static inline size_t rope_node_wchars(rope_node *n) {
-  return n->nexts[0].wchar_size;
-}
-#endif
-
-
-  
 // For debugging.
 void _rope_check(rope *r);
 void _rope_print(rope *r);
