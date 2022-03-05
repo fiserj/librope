@@ -226,7 +226,7 @@ static suint32_t bytelen_and_check_utf8(const uint8_t *str) {
     }
   }
 
-#ifdef DEBUG
+#ifndef NDEBUG
   uint32_t num = p - str;
   assert(num == strlen((char *)str));
 #endif
@@ -446,9 +446,8 @@ static ROPE_RESULT rope_insert_at_iter(rope *r, rope_node *e, rope_iter *iter, c
 ROPE_RESULT rope_insert(rope *r, uint32_t pos, const uint8_t *str) {
   assert(r);
   assert(str);
-#ifdef DEBUG
   _rope_check(r);
-#endif
+
   pos = MIN(pos, r->num_chars);
 
   rope_iter iter;
@@ -457,9 +456,7 @@ ROPE_RESULT rope_insert(rope *r, uint32_t pos, const uint8_t *str) {
 
   ROPE_RESULT result = rope_insert_at_iter(r, e, &iter, str);
 
-#ifdef DEBUG
   _rope_check(r);
-#endif
 
   return result;
 }
@@ -518,9 +515,7 @@ static void rope_del_at_iter(rope *r, rope_node *e, rope_iter *iter, uint32_t le
 }
 
 void rope_del(rope *r, uint32_t pos, uint32_t length) {
-#ifdef DEBUG
   _rope_check(r);
-#endif
 
   assert(r);
   pos = MIN(pos, r->num_chars);
@@ -533,11 +528,10 @@ void rope_del(rope *r, uint32_t pos, uint32_t length) {
 
   rope_del_at_iter(r, e, &iter, length);
 
-#ifdef DEBUG
   _rope_check(r);
-#endif
 }
 
+#ifndef NDEBUG
 void _rope_check(rope *r) {
   assert(r->head.height); // Even empty ropes have a height of 1.
   assert(r->num_bytes >= r->num_chars);
@@ -603,3 +597,4 @@ void _rope_print(rope *r) {
     printf("\"\n");
   }
 }
+#endif // !NDEBUG

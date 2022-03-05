@@ -154,8 +154,13 @@ static inline uint32_t rope_node_chars(rope_node *n) {
 }
 
 // For debugging.
+#ifndef NDEBUG
 void _rope_check(rope *r);
 void _rope_print(rope *r);
+#else
+#define _rope_check(r) ((void)0)
+#define _rope_print(r) ((void)0)
+#endif
 
 #ifdef __cplusplus
 }
